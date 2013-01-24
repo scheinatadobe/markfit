@@ -113,14 +113,15 @@ def computeSummary(beta,betaSigmaSq,SSE,SSTO,n,p,column_names,formula) :
     return LinearModelSummary(n,p,beta,SSTO,SSE,MSE,SSR,MSR,f_stat,pVal,RSq,paramT,paramPVal,S,
                                 column_names,formula)
 
-def lm(formula,dataFrame,fitStrategy=Adjust,tolerance=1e-6) :
+def lm(formula,dataFrame,fitStrategy="QR",tolerance=1e-6) :
 
     """ 
-    formula   - a patsy formula
-    dataFrame - a pandas data frame
-    computeSummary - boolean, indicates whether we should compute ANOVA and variable info
-
-    We make summary computation optional because it adds overhead
+    formula     - a patsy formula
+    dataFrame   - a pandas data frame
+    fitStrategy - the algorithm used to fit the model. 'QR' is recommended for maximum 
+                  numerical stability
+    tolerance   - a tolerance parameter used to identify near singularity in the model fitting
+                  strategy
     """
     y,X = patsy.dmatrices(formula,dataFrame)
     assert y.shape[1] == 1, "Multiple dependent variables are not yet supported."
@@ -167,7 +168,7 @@ if __name__ == "__main__" :
     data = pandas.io.parsers.read_csv("salary2.txt")
     fit = lm("sl ~ 1+sx+rk+yr+dg+yd+yd2",data,fitStrategy=QR)
     fit.summary.write()
-    fit = lm("sl ~ 1+sx+rk+yr+dg+yd+yd2",data)
+    fit = lm("sl ~ 1+sx+rk+yr+dg+yd+yd2",data,fitStrategy=Adjust)
 
     #fit = lm("sl ~  dg + yd +yd2", data)
 
