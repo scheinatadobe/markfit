@@ -1,5 +1,6 @@
 """ 
-This module handles stepwise regression by incremental updates to the QR decomposition
+This module handles various householder operations which we anticipate plugging into 
+a stepwise regression functionality
 """
 import unittest
 import numpy as np
@@ -101,6 +102,19 @@ class TestQRStepwiseSolver(unittest.TestCase) :
         A=QR_apply(matrix,np.array([np.ones(4)]).T,active=np.ones(3,dtype=np.bool))
         for i in range(A.shape[1]) :
             self.assertTrue(abs(np.sum(A[i+1:,i])) < 1e-6)
+    
+    def test_QR2(self) :
+        matrix = np.array([[12,-51,4],[6,167,-68],[-4,24,-41]])
+        A = QR_apply(matrix,np.array([np.ones(3)]).T,active=np.ones(3,dtype=np.bool))
+        print A[1,1]
+        self.assertTrue(abs(A[0,0]) - 14  < 1e-6)
+        self.assertTrue(abs(A[0,1]) - 21  < 1e-6)
+        self.assertTrue(abs(A[0,2]) - 14  < 1e-6)
+        self.assertTrue(abs(A[1,1]) - 175 < 1e-6)
+        self.assertTrue(abs(A[1,2]) - 70  < 1e-6)
+        self.assertTrue(abs(A[2,2]) - 35  < 1e-6)
+        self.assertTrue(abs(A[1,0]) + abs(A[2,0]) + abs(A[2,1]) < 1e-6)
+
 
        #add test
     def test_QRNoMiddle(self) :
