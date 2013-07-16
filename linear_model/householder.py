@@ -39,14 +39,14 @@ def apply_householder(X,beta,v) :
     if X.ndim == 1 :
         X = np.array([X]).T
     #print "shapes: ", X.shape, v.shape
-    print "apply house:", beta, X.shape, v.shape
+    #print "apply house:", beta, X.shape, v.shape
     w = beta * np.dot(X.T,v)
     if X.shape[1] == 1 :
         w = np.array([w])
         rhs = (v * w).T
     else :
         rhs = np.outer(v,w)
-    print "returning shape: ", (X-rhs).shape, X.shape, rhs.shape
+    #print "returning shape: ", (X-rhs).shape, X.shape, rhs.shape
     stdout.flush()
     return X - rhs
     #print "w: ", w
@@ -73,12 +73,12 @@ def QR_apply(X,y,active) :
     y = y.copy()
     ix = np.where(active)[0]
     for i,j in enumerate(ix) :
-        print "loop j:",j, "i: ",i
+        #print "loop j:",j, "i: ",i
         beta, h  = householder(A[i:,j])
         A[i:,j:] = apply_householder(A[i:,j:],beta,h)
         y[i:]    = apply_householder(y[i:],beta,h)
-    print "A: "
-    print A
+    #print "A: "
+    #print A
     stdout.flush()
     return A
 
@@ -92,7 +92,7 @@ class TestQRStepwiseSolver(unittest.TestCase) :
     def test_householder(self) :
         x = np.array([3,1,5,1],dtype=np.float64)
         beta,v = householder(x)
-        print "test_householder: ", beta, v
+        #print "test_householder: ", beta, v
         answer = x - beta*np.dot(np.outer(v,v),x)  
         diffSum = np.sum(np.abs(answer - np.array([math.sqrt(np.dot(x,x)),0,0,0])))
         self.assertTrue(diffSum < 1e-8, diffSum)
@@ -106,7 +106,7 @@ class TestQRStepwiseSolver(unittest.TestCase) :
     def test_QR2(self) :
         matrix = np.array([[12,-51,4],[6,167,-68],[-4,24,-41]])
         A = QR_apply(matrix,np.array([np.ones(3)]).T,active=np.ones(3,dtype=np.bool))
-        print A[1,1]
+        #print A[1,1]
         self.assertTrue(abs(A[0,0]) - 14  < 1e-6)
         self.assertTrue(abs(A[0,1]) - 21  < 1e-6)
         self.assertTrue(abs(A[0,2]) - 14  < 1e-6)

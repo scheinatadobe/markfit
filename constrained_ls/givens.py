@@ -5,7 +5,11 @@ from math import sqrt
 import unittest
 
 def computeGivensParameters(a,b) :
-    """ returns c,s """
+    """ 
+    [c   s]' [a]  = [r]
+    [-s  c]  [b]  = [0]
+    given a,b this function returns c,s
+    """
     if b == 0.0 :
         return 1.0,0.0
     if abs(b) > abs(a) :
@@ -19,6 +23,9 @@ def computeGivensParameters(a,b) :
     return c,s
 
 def preApplyGivensRotation(c,s,A,i,k) :
+    """
+    Perfroms the givens rotation operation in-place on A([i,k],:).
+    """
     for j in range(A.shape[1]) :
         tau1 = A[i,j]
         tau2 = A[k,j]
