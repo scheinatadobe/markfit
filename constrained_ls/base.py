@@ -1,11 +1,11 @@
 import numpy as np
 import householder as hh
 import unittest 
+import scipy.linalg
+from sys import stderr
 
-#TODO: The delete constraint code should be finished, but with the Matrix Computations book
-#in hand
-#TODO: are L and Q dimensions determined ahead of time? No. 
-#TODO: Think about test cases that for adding and deleting constraints that have an [L 0]
+# Need 2 more non-trivial examples to test
+# add and delete
 
 class IndexMap :
     """ 
@@ -81,31 +81,43 @@ def LQ(A) :
     A index Mapper is returned so that the caller can keep track of which rows of L 
     correspond to which rows of A going forward.
     """
-    Q,R = np.linalg.qr(A.T) #Q now represents the null space of A
+    Q,R = scipy.linalg.qr(A.T) #Q now represents the null space of A
     Q   = np.transpose(Q)
     L   = np.transpose(R)
     return L, Q, IndexMap( [i for i in range(A.shape[0])] )
 
 def _add_constraint_LQ(L,Q,indexMap,new_row_to_append,new_row_index) :
+    """
+    Form a new L, Q matrix by adding a new row to the bottom.
+    new_row_index describes the row in the original constraint matrix (0-indexed)
+    """
     # Practical Optimization, pg 172.
     # My householder code is written for QR rather than LQ, so for now we convert back to this form
     # to perform intermediate computations
+    
     t   = L.shape[0]
+    print "entered, L.shape: ", L.shape, L
     Q   = np.transpose(Q)
-    R   = np.transpose(L)
-    print R.shape
+    R   = np.zeros([L.shape[1],L.shape[0]+1])
+    R[:,:-1] = np.transpose(L)
+    print R, R.shape, "new_row: ", new_row_to_append, "Q:"
+    #print Q
     newcol = np.dot(new_row_to_append,Q)
-    newcol = np.reshape(newcol,[newcol.shape[0],1])
-    print "before", R.shape
-
-    R   = np.hstack((R,newcol,))
-    print "after: ", R.shape
-    beta,v = hh.householder(R[t+1,t+1:])
-    R[t+1,t+1:] = hh.apply_householder(R[t+1,t+1:],beta,v)
-    Q[t+1,t+1:] = hh.apply_householder(Q[t+1,t+1:],beta,v)
+    #print "newcol: ", newcol, "newcol.shape: ", newcol.shape, R.shape
+    R[:,t] = newcol
+    #print "before", R.shape
+    #print "after: ", R.shape, t, "R:"
+    #print R
+    beta,v = hh.householder(R[t,t:])
+    #print "R:\n", R, "\nv:\n", v, v.shape, "\nR[t,t:]\n", R[t,t:]
+    print "Q:\n", Q, "\nv:\n",v, v.shape,"\nQ[t,t:]\n", Q[t,t:]
+    R[t,t:] = hh.apply_householder(R[t,t:],beta,v)
+    print "final Q[t,t:]", Q[t,t:]
+    
+    Q[t,t:] = hh.apply_householder(Q[t,t:],beta,v)
     Q   = np.transpose(Q)
     L   = np.transpose(R)
-    indexMap.append(new_row_to_index)
+    #indexMap.append(new_row_index)
     return L,Q
 
 def _del_constraint_LQ(L, Q, indexMap, row_index_to_delete) :
@@ -128,26 +140,64 @@ class TestConstraintManipulation(unittest.TestCase) :
     Tests the code related to adding and deleting constraints
     """
     def setUp(self) :
+        #The idea behind A is that we have a full identity matrix
         self.A = np.array([[1,0,0],[0,1,0],[0,0,1]])
+        #B is an incomplete identity matrix which we could make complete by adding 1 more constraint
         self.B = np.array([[1,0,0],[0,0,1]])
-    def testDel(self) :
+        
+        #C motivation: let's create a two parameter regression model and then 
+        # constrain the slope to be positive
+        self.C = np.array([[0,1]])
+
+    def testLQ(self) :
+        #Q,R = scipy.linalg.qr(self.B,mode='full')
+        #print "orig:", Q.shape, "R: ", R.shape
+        #Q,R = scipy.linalg.qr(self.B.T,mode='full')
+        #print "after: ", Q.shape, "R: ", R.shape
+        
+        L,Q,imap = LQ(self.B)
+        #print "L,Q shape: ", L.shape,Q.shape
+        self.assertTrue(Q.shape[0] == Q.shape[1])
+        self.assertTrue(L.shape[0] == self.B.shape[0])
+        self.assertTrue(L.shape[1] == self.B.shape[1])
+
+    def testDelA(self) :
         #start with full constraint matrix
         L,Q,indexMap = LQ(self.A)
         #It turns out that L and Q are both the identify for this case, making it 
         #perhaps not the most interesting test case.
-        
         #delete 2nd constraint
         i = indexMap.back[2]
         L,Q = _del_constraint_LQ(L,Q,indexMap,2)
         newA = np.dot(L,Q)
         expected_result = np.array([[1,0,0],[0,1,0]])
         self.assertTrue(np.allclose(expected_result, newA))
-    def testAdd(self) :
-        
+    
+    def testAddB(self) :
         L,Q,indexMap = LQ(self.B)
-        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([0,1,0]),3)
+        print "L add: ", L
+        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([0,1,0]),2)
         newB = np.dot(L,Q)
-        self.assertTrue(np.allclose(self.A, newB))
+        #print >>stderr, "newB: ", newB, np.vstack((self.B,[0,1,0],))
+        self.assertTrue(np.allclose(np.vstack((self.B,[0,1,0],)), newB))
+        
+    
+    def testCFullRoundTrip(self) :
+        """ 
+        start with the full contstraint set.  
+        delete the constraint
+        add it back
+        then verify we end up with what we started with
+        """
+        L,Q,indexMap = LQ(self.C)
+        L,Q, =_del_constraint_LQ(L,Q,indexMap,0)
+        print "L\n",L, "Q\n",Q
+        L,Q  =_add_constraint_LQ(L,Q,indexMap,np.array([0,1]),0)
+        newC = np.dot(L,Q)
+        self.assertTrue(np.allclose(self.C,newC))
+       
+    def testCEmptyRoundTrip(self) :
+        self.assertTrue(False)
 
 
 def __is_feasible_point(A,b,C,d,w,verbose=True) :
