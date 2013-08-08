@@ -4,7 +4,7 @@ pyleastsq
 
 This module contains several pieces of functionality related to
 fitting linear models.  For example, it contains a linear regression
-package those uses formulas from the patsy package 
+package which employs formulas from the patsy package 
 
 from pylinear import lm
 data = pandas.io.parsers.read_csv("salary2.txt")
