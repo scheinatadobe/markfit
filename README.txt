@@ -6,7 +6,7 @@ This module contains several pieces of functionality related to
 fitting linear models.  For example, it contains a linear regression
 package which employs formulas from the patsy package 
 
-from pylinear import lm
+from pyleastsq import lm
 data = pandas.io.parsers.read_csv("salary2.txt")
 fit = lm("sl ~ 1+sx+rk+yr+dg+yd+dg2",data,fitStrategy=QR)
 fit.summary.write()

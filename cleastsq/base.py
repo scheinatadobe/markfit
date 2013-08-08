@@ -1,5 +1,5 @@
 import numpy as np
-import householder as hh
+from pyleastsq import householder as hh
 import unittest 
 import scipy.linalg
 from sys import stderr
