@@ -1,8 +1,13 @@
+if __name__ == "__main__" and __package__ is None:
+        __package__ = "pyleastsq.cleastsq"
 import numpy as np
-from pyleastsq import householder as hh
+exit(0)
+#from pyleastsq import householder as hh
+from ..pyleastsq import householder as hh
+import givens
 import unittest 
 import scipy.linalg
-from sys import stderr
+from sys import stderr, stdout
 
 # Need 2 more non-trivial examples to test
 # add and delete
@@ -17,9 +22,13 @@ class IndexMap :
     constraints are represented and which rows of Z correspond.
     """
     def __init__(self,lst) :
-        """ lst should be a list of integers """
+        """ 
+            lst should be a list of integers 
+            self.forward: maps Z matrix rows to original constraint matrix rows
+            self.back:    maps constraint matrix rows to Z matrix rows
+        """
         assert(type(lst) == type([]))
-        self.forward = lst[:]
+        self.forward = lst[:] 
         self.back = dict( [(val,i)  for i,val in enumerate( lst ) ] )
 
     def __len__(self) :
@@ -27,9 +36,10 @@ class IndexMap :
 
     def append(self, index) :
         """
-        add a new row to the constraint matrix 
+        add a new row to the constraint matrix
+        index represents the index with respect to an original constraint matrix
         """
-        assert index not in self.back
+        assert index not in self.back, self.back
         self.forward.append(index)
         self.back[index] = len(self.forward) - 1
     
@@ -40,10 +50,15 @@ class IndexMap :
         """
         i = self.back[index]
         del self.forward[i]
+        foundKey = None
         for j,k in enumerate(self.back) :
             v = self.back[k]
             if v > i : 
                 self.back[k] = v-1
+            elif v == i :
+                foundKey = k
+        assert foundKey is not None
+        del self.back[foundKey]
 
 class TestIndexMap(unittest.TestCase) :
     def test_create1342(self) :
@@ -65,13 +80,13 @@ class TestIndexMap(unittest.TestCase) :
     def test_delete(self) :
         lst = [1,3,4,2]
         ixMap = IndexMap(lst)
-        #print ixMap.back
         ixMap.delete(4)
         self.assertTrue([1,3,2] == ixMap.forward)
         self.assertTrue(ixMap.back[1] == 0)
         self.assertTrue(ixMap.back[3] == 1,ixMap.back[3])
         self.assertTrue(ixMap.back[2] == 2,ixMap.back[2])
-
+        self.assertTrue(len(ixMap.back) == 3)
+    
 def LQ(A) :
     """
     An function which returns a modified LQ decomposition.
@@ -81,58 +96,63 @@ def LQ(A) :
     A index Mapper is returned so that the caller can keep track of which rows of L 
     correspond to which rows of A going forward.
     """
+
+    if A.shape[0] == 0 :
+        return np.zeros([0,A.shape[1]]),np.diag([1 for i in range(A.shape[1])]), IndexMap([])
+    
     Q,R = scipy.linalg.qr(A.T) #Q now represents the null space of A
     Q   = np.transpose(Q)
     L   = np.transpose(R)
     return L, Q, IndexMap( [i for i in range(A.shape[0])] )
 
-def _add_constraint_LQ(L,Q,indexMap,new_row_to_append,new_row_index) :
+class TestLQ(unittest.TestCase) :
+    def test_Empty(self) :
+        A = np.zeros([0,3])
+        L,Q,ixMap = LQ(A)
+        self.assertTrue(L.shape == (0,A.shape[1],))
+        self.assertTrue(Q.shape == (A.shape[1],A.shape[1],))
+          
+
+def _add_constraint_LQ(L,Q,indexMap,new_row_to_append,constraint_row_index) :
     """
     Form a new L, Q matrix by adding a new row to the bottom.
-    new_row_index describes the row in the original constraint matrix (0-indexed)
+    constraint_row_index describes the row in the original constraint matrix (0-indexed)
     """
     # Practical Optimization, pg 172.
     # My householder code is written for QR rather than LQ, so for now we convert back to this form
     # to perform intermediate computations
     
     t   = L.shape[0]
-    print "entered, L.shape: ", L.shape, L
     Q   = np.transpose(Q)
     R   = np.zeros([L.shape[1],L.shape[0]+1])
     R[:,:-1] = np.transpose(L)
-    print R, R.shape, "new_row: ", new_row_to_append, "Q:"
-    #print Q
     newcol = np.dot(new_row_to_append,Q)
-    #print "newcol: ", newcol, "newcol.shape: ", newcol.shape, R.shape
     R[:,t] = newcol
-    #print "before", R.shape
-    #print "after: ", R.shape, t, "R:"
-    #print R
     beta,v = hh.householder(R[t,t:])
-    #print "R:\n", R, "\nv:\n", v, v.shape, "\nR[t,t:]\n", R[t,t:]
-    print "Q:\n", Q, "\nv:\n",v, v.shape,"\nQ[t,t:]\n", Q[t,t:]
     R[t,t:] = hh.apply_householder(R[t,t:],beta,v)
-    print "final Q[t,t:]", Q[t,t:]
-    
+      
     Q[t,t:] = hh.apply_householder(Q[t,t:],beta,v)
     Q   = np.transpose(Q)
     L   = np.transpose(R)
-    #indexMap.append(new_row_index)
+    indexMap.append(constraint_row_index)
     return L,Q
 
-def _del_constraint_LQ(L, Q, indexMap, row_index_to_delete) :
+def _del_constraint_LQ(L, Q, indexMap, constraint_index_to_delete) :
     # Practical Optimization, pg 172-173.
+    #constraint_index_to_delete describes the row of the original constraint matrix to delete
+    row_index_to_delete = indexMap.back[constraint_index_to_delete]
     R   = np.transpose(np.delete(L,row_index_to_delete,0))
     Q   = np.transpose(Q)
-    indexMap.delete(row_index_to_delete)
+    stdout.flush()
+    indexMap.delete(constraint_index_to_delete)
     #in transpose view, we have deleted a column.  Now we have to straighten out the
     #columns which are no-longer upper triangular.  The problematic rows are at
     #row_index_to_delete and higher, and these rows feature a single unwanted super-diagonal
     #element.
     for i in range(row_index_to_delete, R.shape[1]) :
-        c,s = computeGivensParameters(R[i-1,i],R[i,i])
+        c,s = givens.computeGivensParameters(R[i-1,i],R[i,i])
         #TODO: check arguments of preeApplyGivensRotation
-        preApplyGivensRotation(c,s,A,i,i+1) 
+        givens.preApplyGivensRotation(c,s,R,i,i+1) 
     return np.transpose(R), np.transpose(Q)
 
 class TestConstraintManipulation(unittest.TestCase) :
@@ -147,16 +167,14 @@ class TestConstraintManipulation(unittest.TestCase) :
         
         #C motivation: let's create a two parameter regression model and then 
         # constrain the slope to be positive
-        self.C = np.array([[0,1]])
+        self.C = np.array([[1,0],[0,1]])
+        #self.C     = np.array([[0,1]])
 
     def testLQ(self) :
         #Q,R = scipy.linalg.qr(self.B,mode='full')
-        #print "orig:", Q.shape, "R: ", R.shape
         #Q,R = scipy.linalg.qr(self.B.T,mode='full')
-        #print "after: ", Q.shape, "R: ", R.shape
         
         L,Q,imap = LQ(self.B)
-        #print "L,Q shape: ", L.shape,Q.shape
         self.assertTrue(Q.shape[0] == Q.shape[1])
         self.assertTrue(L.shape[0] == self.B.shape[0])
         self.assertTrue(L.shape[1] == self.B.shape[1])
@@ -167,7 +185,6 @@ class TestConstraintManipulation(unittest.TestCase) :
         #It turns out that L and Q are both the identify for this case, making it 
         #perhaps not the most interesting test case.
         #delete 2nd constraint
-        i = indexMap.back[2]
         L,Q = _del_constraint_LQ(L,Q,indexMap,2)
         newA = np.dot(L,Q)
         expected_result = np.array([[1,0,0],[0,1,0]])
@@ -175,10 +192,8 @@ class TestConstraintManipulation(unittest.TestCase) :
     
     def testAddB(self) :
         L,Q,indexMap = LQ(self.B)
-        print "L add: ", L
         L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([0,1,0]),2)
         newB = np.dot(L,Q)
-        #print >>stderr, "newB: ", newB, np.vstack((self.B,[0,1,0],))
         self.assertTrue(np.allclose(np.vstack((self.B,[0,1,0],)), newB))
         
     
@@ -190,14 +205,51 @@ class TestConstraintManipulation(unittest.TestCase) :
         then verify we end up with what we started with
         """
         L,Q,indexMap = LQ(self.C)
-        L,Q, =_del_constraint_LQ(L,Q,indexMap,0)
-        print "L\n",L, "Q\n",Q
-        L,Q  =_add_constraint_LQ(L,Q,indexMap,np.array([0,1]),0)
+        L,Q =_del_constraint_LQ(L,Q,indexMap,1)
+        L,Q =_del_constraint_LQ(L,Q,indexMap,0)
+        L,Q  = _add_constraint_LQ(L,Q,indexMap,np.array([1,0]),0)
+        L,Q  = _add_constraint_LQ(L,Q,indexMap,np.array([0,1]),1)
         newC = np.dot(L,Q)
         self.assertTrue(np.allclose(self.C,newC))
-       
-    def testCEmptyRoundTrip(self) :
-        self.assertTrue(False)
+    
+    def testAFullRoundTrip(self) :
+        L,Q,indexMap = LQ(self.A)
+        L,Q = _del_constraint_LQ(L,Q,indexMap,1)
+        L,Q = _del_constraint_LQ(L,Q,indexMap,0)
+        L,Q = _del_constraint_LQ(L,Q,indexMap,2)
+        #order of addition must be precisise to end up with the original L and Q
+        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([1,0,0]),0)
+        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([0,1,0]),1)
+        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([0,0,1]),2)
+        newA = np.dot(L,Q)
+        self.assertTrue(np.allclose(self.A,newA))
+        #Let's try a different order of deletion    
+        L,Q = _del_constraint_LQ(L,Q,indexMap,0)
+        L,Q = _del_constraint_LQ(L,Q,indexMap,1)
+        L,Q = _del_constraint_LQ(L,Q,indexMap,2)
+        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([1,0,0]),0)
+        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([0,1,0]),1)
+        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([0,0,1]),2)
+        newA = np.dot(L,Q)
+        self.assertTrue(np.allclose(self.A,newA))
+        #Another order of deletion
+        L,Q = _del_constraint_LQ(L,Q,indexMap,2)
+        L,Q = _del_constraint_LQ(L,Q,indexMap,1)
+        L,Q = _del_constraint_LQ(L,Q,indexMap,0)
+        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([1,0,0]),0)
+        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([0,1,0]),1)
+        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([0,0,1]),2)
+        newA = np.dot(L,Q)
+        self.assertTrue(np.allclose(self.A,newA))
+
+    def testEmptyToA(self) :
+        X = np.zeros([0,3]) #start with empty constraint matrix for 3 variables
+        L,Q,indexMap = LQ(X)
+        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([1,0,0]),0)
+        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([0,1,0]),1)
+        L,Q = _add_constraint_LQ(L,Q,indexMap,np.array([0,0,1]),2)
+        newA = np.dot(L,Q)
+        self.assertTrue(np.allclose(self.A,newA))
 
 
 def __is_feasible_point(A,b,C,d,w,verbose=True) :
@@ -239,7 +291,7 @@ def __has_converged(X,y,A,b,w,active,g,Z,lamb) :
 
 def find_feasible_direction(X,y,w,Z) :
     """ TODO: rewrite using QR decomposition to avoid re-computation. """
-    #TODO: possitble typo in Gill book in R implementation means we have the wrong sign
+    #TODO: possitble typo in Gill book mentioned in R implementation means we have the wrong sign
     #Computes  Newton direction that can be taken either step 1 or else shortened 
     #to the neareast constraint.
     return np.dot(Z,np.linalg.lstsq(np.dot(X,Z),np.dot(X,w) - y))
@@ -375,3 +427,4 @@ def ls(X,y,A,b,C,d,w0,verbose=True) :
 
 if __name__ == "__main__" : 
     unittest.main()
+

@@ -38,13 +38,8 @@ def apply_householder(X,beta,v) :
     Employ vector v to make column i 0 BELOW the i'th row
     """
     #pdb.set_trace()
-    print "in apply_householder", X.ndim, X
     if X.ndim == 1 :
         X = X.reshape([1,X.shape[0]])
-    #print "shapes: ", X.shape, v.shape
-    #print "apply house:", beta, X.shape, v.shape
-    print "X.t dim and v dim: ", X.T.shape, v.shape, "\nX:\n", X, "\nv:,",v
-  
     w = beta * np.dot(X.T,v)
     if X.shape[1] == 1 :
         w = np.array([w])
