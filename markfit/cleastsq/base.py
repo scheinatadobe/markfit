@@ -1,9 +1,8 @@
 if __name__ == "__main__" and __package__ is None:
         __package__ = "pyleastsq.cleastsq"
 import numpy as np
-exit(0)
 #from pyleastsq import householder as hh
-from ..pyleastsq import householder as hh
+from ..leastsq import householder as hh
 import givens
 import unittest 
 import scipy.linalg

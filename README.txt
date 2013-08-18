@@ -6,10 +6,14 @@ This module contains several pieces of functionality related to
 fitting linear models.  For example, it contains a linear regression
 package which employs formulas from the patsy package 
 
-from pyleastsq import lm
-data = pandas.io.parsers.read_csv("salary2.txt")
-fit = lm("sl ~ 1+sx+rk+yr+dg+yd+dg2",data,fitStrategy=QR)
-fit.summary.write()
+import patsy
+import pandas.io
+from markfit import leastsq
+from sys import stdout
+
+data  = pandas.io.parsers.read_csv("test_data.csv")
+model = leastsq.base.lm("y~x",data) 
+model.summary.write(stdout)
 
 The package also includes some numerical linear algebra code useful
 for fitting linear regression and constrained optimization problems.

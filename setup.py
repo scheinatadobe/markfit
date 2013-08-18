@@ -1,11 +1,11 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
-    name='pyleastsq',
+    name='markfit',
     version='0.1.0',
     author='Andrew I. Schein',
     author_email='aschein@adobe.com',
-    packages=['pyleastsq','cleastsq'],
+    packages=find_packages(),
     scripts=[],
     url='https://git.corp.adobe.com/aschein/linear',
     license='LICENSE.txt',

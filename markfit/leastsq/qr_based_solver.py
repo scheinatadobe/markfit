@@ -37,7 +37,7 @@ def solve(X,y,tolerance=1e-6) :
     XXn1_diag[permutation] = XXn1_diag.copy()
     resid = y - np.dot(X,beta)
     SSE   = np.dot(resid,resid)
-    return beta, XXn1_diag, SSE, rank
+    return beta, XXn1_diag, SSE, rank,Q
 
 class StepwiseInitError(Exception) : 
     """ Trying to perform stepwise regression with rank deficient base set of predictors"""
