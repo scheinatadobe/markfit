@@ -10,6 +10,7 @@ import numpy as np
 import scipy.linalg as linalg
 import math
 import householder
+from sys import stderr, stdout
 
 def solve(X,y,tolerance=1e-6) :
     """ 
@@ -22,12 +23,22 @@ def solve(X,y,tolerance=1e-6) :
     """
     n = X.shape[0]
     p = X.shape[1]
+   
+    print >>stderr, "performing qr", n, p
     Q,R,permutation = linalg.qr(X,pivoting=True,mode='economic')
+    print R
     R_diag = np.diag(R)
-    rank = np.where(R_diag < tolerance)[0]
+    print R_diag
+    rank = np.where(np.abs(R_diag) < tolerance)[0]
+    print "rank: ", rank, tolerance
     rank = R_diag.shape[0] if rank.shape[0] == 0 else rank[0]
+    print rank
     b     = np.dot(y,Q)[:rank]
     #print "P is: ", P
+    print >>stderr, "triangular solve"
+    print R[:rank,:rank]
+    print b
+    stdout.flush()
     beta  = linalg.solve_triangular(R[:rank,:rank],b,lower=False)
     if rank < R.shape[0] : beta = np.append(beta,np.zeros(R_diag.shape[0] - rank))
     beta[permutation]  = beta.copy() #non-atomic operation requires copy

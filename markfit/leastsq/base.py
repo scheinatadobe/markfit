@@ -15,7 +15,7 @@ from stepwise_penalties import AIC, AICc
 from sys import stdout, stderr
 from patsy import EvalEnvironment, ModelDesc, Term
 import math
-
+print "test"
 run_paranoid_tests = True #some are expensive
 
 #fitting strategies coded as variables:
@@ -396,8 +396,9 @@ def stepwiseInit(upperScope,
     for feat in Xlower.design_info.column_names :
         lower_active[featMap[feat]] = True
     #next step: fit model using only the active set of features
-    beta, betaSigmaSq, SSE, df = qr_based_solver.solve(X[:,active],y.flatten())
-        
+    print >>stderr, "about to solve"
+    beta, betaSigmaSq, SSE, df, Q = qr_based_solver.solve(X[:,active],y.flatten())
+    print >>stderr, "solved"
 
     residWithMean = y - np.mean(y)
     SSTO = np.dot(residWithMean,residWithMean)
@@ -411,7 +412,10 @@ def stepwiseInit(upperScope,
 
 
 if __name__ == "__main__" :
+    
     data = pandas.io.parsers.read_csv("salary2.txt")
+
+    
     #fit = lm("sl ~ 1+sx+rk+yr+dg+yd+dg2",data,fitStrategy=QR)
     #fit.summary.write()
 #    fit = lm("sl ~ 1+sx+rk+yr+dg+yd+yd2",data,fitStrategy=Adjust)
@@ -425,6 +429,6 @@ if __name__ == "__main__" :
     #stepper.step(direction="forward")
     stepper = stepwiseInit("sl ~ sx+rk+yr+dg+yd",data,startScope="sl ~ sx+rk+yr+dg+yd",
     trace=True,groupVars=False)
-    stepper.step(direction="backward")
+    #stepper.step(direction="backward")
       
 
