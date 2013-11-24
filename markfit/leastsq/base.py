@@ -15,6 +15,7 @@ import scipy.stats as stats
 import scipy.linalg as linalg
 from sys import stdout, stderr
 import math
+from prettytable import PrettyTable
 
 #fitting strategies coded as variables:
 #QR decomposition
@@ -45,6 +46,7 @@ class LinearModelFit :
 class LinearModelSummary :
     def __init__(self,n,df,beta,SSTO,SSE,MSE,SSR,MSR,f,pVal,RSq,paramT,paramPVal,S,column_names,
                 modelDesc) :
+        #TODO: encapsolate df calcs so that printers don't have to do this work.
         self.n = n
         self.degrees_freedom = df
         self.beta = beta
@@ -61,6 +63,40 @@ class LinearModelSummary :
         self.column_names = column_names
         self.S         = S
         self.modelDesc   = modelDesc
+
+   
+    def textPretty(self):
+        """
+        This is an experiment to use the PrettyTable module
+        """
+        #start by building the coefficients table
+        def floatFmt(x) :
+            #0.7.2 prettytable does not do %g, so we convert to text with the 
+            #desired formatting
+            return "%6g"%x
+        
+        p = PrettyTable()
+        p.add_column("",self.column_names)
+        p.align[""] = 'l'
+        p.add_column("Estimate",map(floatFmt,self.beta))
+        p.align["Estimate"] = "r"
+        p.add_column("Std. Error",map(floatFmt,self.S))
+        p.align["Std. Error"] = "r"
+        p.add_column("t value",map(floatFmt,self.paramT))
+        p.align["t value"] = "r"
+        p.add_column("p value",map(floatFmt,self.paramPVal))
+        p.align["p value"] = "r"
+        
+        anova = PrettyTable()
+        anova.add_column("",["SSR","SSE"])
+        anova.add_column("Sum",map(floatFmt, [self.SSR,self.SSE]))
+        anova.align["Sum"] = "r"
+        anova.add_column("df", [self.degrees_freedom - 1, self.n - self.degrees_freedom] )
+        anova.align["df"] = "r"
+        anova.add_column("Mean",map(floatFmt,[self.MSR,self.MSE]))
+        anova.align["Mean"] = "r"
+        return p,anova
+    
 
     def write(self,stdout=stdout,pad=4) :
         
@@ -421,8 +457,11 @@ if __name__ == "__main__" :
     data = pandas.io.parsers.read_csv("salary2.txt")
 
     
-    #fit = lm("sl ~ 1+sx+rk+yr+dg+yd+dg2",data,fitStrategy=QR)
-    #fit.summary.write()
+    fit = lm("sl ~ 1+sx+rk+yr+dg+yd+dg2",data,fitStrategy=QR)
+    est,anova = fit.summary.textPretty()
+    print est
+    print anova
+    fit.summary.write()
 #    fit = lm("sl ~ 1+sx+rk+yr+dg+yd+yd2",data,fitStrategy=Adjust)
 #
 #    #fit = lm("sl ~  dg + yd +yd2", data)
@@ -430,11 +469,13 @@ if __name__ == "__main__" :
 #    fit.summary.write()
 #
     #data = pandas.io.parsers.read_csv("salary2.txt")
-    stepper = stepwiseInit("sl ~ sx+rk+yr+dg+yd",data,trace=True,groupVars=True)
-    stepper.step(direction="both")
+    #stepper = stepwiseInit("sl ~ sx+rk+yr+dg+yd",data,trace=True,groupVars=True)
+    #stepper.step(direction="both")
     #stepper = stepwiseInit("sl ~ sx+rk+yr+dg+yd",data,startScope="sl ~ sx+rk+yr+dg+yd",
     #trace=True,groupVars=False)
     #stepper.step(direction="backward")
+    
+    
     
     import statsmodels.api as sm
     from statsmodels.formula.api import ols
