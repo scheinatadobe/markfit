@@ -1,19 +1,30 @@
 ============
-pyleastsq
+markfit
 ============
 
 This module contains several pieces of functionality related to
 fitting linear models.  For example, it contains a linear regression
-package which employs formulas from the patsy package 
+package which employs formulas from the patsy package.
 
-import patsy
-import pandas.io
+Requirements
+
+numpy >= 1.7
+scipy >= 0.12.0
+pandas >= 0.12.0
+patsy >= 0.2.1 
+
+
+import pandas
 from markfit import leastsq
-from sys import stdout
 
 data  = pandas.io.parsers.read_csv("test_data.csv")
-model = leastsq.base.lm("y~x",data) 
-model.summary.write(stdout)
+model = leastsq.fit("y~x",data)
+model.summary.write()
+
+#Here is an example running stepwise regression:
+
+stepper = leastsq.stepwiseInit("y ~ sx+x+yr+dg+yd",data,trace=True,groupVars=True)
+stepper.step(direction="both")
 
 The package also includes some numerical linear algebra code useful
 for fitting linear regression and constrained optimization problems.

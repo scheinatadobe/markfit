@@ -1,1 +1,2 @@
-import base, householder
+from base import fit, stepwiseInit 
+import householder

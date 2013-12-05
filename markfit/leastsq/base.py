@@ -4,7 +4,6 @@ a data frame and formula.  The code dispatches to the appropriate solvers.
 """
 
 
-from markfit.leastsq import adjust_based_solver
 from markfit.leastsq import qr_based_solver
 from markfit.leastsq.stepwise_penalties import AIC, AICc
 
@@ -16,24 +15,8 @@ import scipy.linalg as linalg
 from sys import stdout, stderr
 import math
 from prettytable import PrettyTable
-
-#fitting strategies coded as variables:
-#QR decomposition
-QR = "QR"
-#Adjust-based operations on X'X (Goodnight, 1979)
-ADJUST = "Adjust"
-#Sweep-based operations on X'X (Goodnight, 1979)
-SWEEP = "Sweep"
-
-# def floatFormatter(value,precision):
-#     if value > 1e6 :
-#         return "%g"%value
-#     if value > 1e5 :
-#         return "%d"%(int(value + 0.5))
-#     if value > 1e4 :
-#         return  
-#     
-    
+import stepwise_penalties
+   
 class LinearModelFit :
     """
     Holds the parameters and summary information associated with the
@@ -171,7 +154,7 @@ def computeSummary(beta,betaSigmaSq,SSE,SSTO,n,df,column_names,formula) :
     return LinearModelSummary(n,df,beta,SSTO,SSE,MSE,SSR,MSR,f_stat,pVal,RSq,paramT,paramPVal,S,
                                 column_names,formula)
 
-def lm(formula,dataFrame,fitStrategy="QR",tolerance=1e-6) :
+def fit(formula,dataFrame,tolerance=1e-6) :
 
     """ 
     formula     - a patsy formula
@@ -191,36 +174,20 @@ def lm(formula,dataFrame,fitStrategy="QR",tolerance=1e-6) :
     #print X.design_info.term_names    
     #print y.shape
     
-    if fitStrategy == QR :
-        beta,betaSigmaSq,SSE,df,Q = qr_based_solver.solve(X,y,tolerance=tolerance)
-    elif fitStrategy == "Adjust" or fitStrategy == "Sweep" :
-        Xy  = np.array([np.dot(X.T,y)])
-        A = np.append(XX,Xy.T,axis=1)
-        if fitStrategy == "Adjust" : 
-            A = np.append(A,np.identity(XX.shape[0]),axis=1)
-        yy = np.array([[np.dot(y,y)]])
-        bottom = np.append(Xy,yy.T,1)
-        if fitStrategy == "Adjust" : 
-            bottom = np.append(bottom,np.zeros([1,p]),1)
-        A = np.append(A,bottom,0)
-        if fitStrategy == "Adjust" : 
-            adjust_based_solver.solve(A)
-            XXn1 = A[:p,p+1:]
-        else :
-            sweep_based_solver.solve(A)
-            XXn1 = A[:p,:p]
-        betaSigmaSq = np.diag(XXn1)
-        beta = A[:p,p]
-        SSE  = A[p,p]
-    else : 
-        raise "Invalid fit strategy selected: '" + fitStrategy + "'"
-    
+    beta,betaSigmaSq,SSE,df,Q = qr_based_solver.solve(X,y,tolerance=tolerance)
     #The problem is solved.  On to computing ANOVA table and other diagnostics! 
     residWithMean = y - np.mean(y)
     SSTO = np.dot(residWithMean,residWithMean)
     env = patsy.EvalEnvironment.capture() 
     modelDesc = patsy.ModelDesc.from_formula(formula,env)
-    summary = computeSummary(beta,betaSigmaSq,SSE,SSTO,n,df,X.design_info.column_names,modelDesc)
+    summary = computeSummary(beta,
+                            betaSigmaSq,
+                            SSE,
+                            SSTO,
+                            n,
+                            df,
+                            X.design_info.column_names,
+                            modelDesc)
     #print summary.beta
     return LinearModelFit(summary.beta,summary)
 
@@ -228,8 +195,6 @@ class StepwiseNoAction(Exception):
     #exception to throw no variables meet the stepwise search criteria
     pass
 
-def AIC(n,df,SSE) :
-    return -df - n * math.log(SSE/n)
     
 class StepwiseFitter :
     def __init__(self,
@@ -270,13 +235,13 @@ class StepwiseFitter :
         penalized likelihood function.
         """
         assert direction in ["forward","backward"] 
-        print "step1 direction: ", direction 
-        print "lower_active: ", self.lower_active
-        print "entered step1, active: ", self.active
+        #print "step1 direction: ", direction 
+        #print "lower_active: ", self.lower_active
+        #print "entered step1, active: ", self.active
         assert direction in set(["forward","backward"]), \
             "direction must be either 'forward' or 'backward.' Passed: '" + direction + "'"
         old_summary = self.currentFit.summary
-        print "checking conditions"
+        #print "checking conditions"
         if direction == "forward" and np.all(self.active) : 
             raise StepwiseNoAction("All features are already added.")
         if direction == "backward" and np.all(self.active == self.lower_active)  :
@@ -284,7 +249,7 @@ class StepwiseFitter :
         X = self.X
         y = self.y.flatten()
         column_names = X.design_info.column_names
-        print "entering case: ", self.groupVars
+        #print "entering case: ", self.groupVars
         active = self.active.copy()
         if not self.groupVars :
             if direction == "forward" :   
@@ -293,7 +258,7 @@ class StepwiseFitter :
                                                             self.active,
                                                             self.currentFit)
                 assert(len(winners) == 1)
-                print "winner: ", winners
+                #print "winner: ", winners
                 assert not active[winners[0]]
                 active[winners[0]] = True
             else : #backward
@@ -308,7 +273,7 @@ class StepwiseFitter :
                 active[winner[0]] = False
         else : #Grouped variables
             if direction == "backward" :
-                print "entering pickBackwardVariable..."
+                #print "entering pickBackwardVariable..."
                 winners = qr_based_solver.delNextVariableGroupBruteForce(X,
                                                               y,
                                                               self.active,
@@ -327,17 +292,17 @@ class StepwiseFitter :
 
         
         if np.all(active == self.active) :
-            print "They are all the same!"
+            #print "They are all the same!"
             raise StepwiseNoAction()
-        beta, var, SSE, df, _ = qr_based_solver.solve(X[:,active],y,self.tolerance) 
-        print "active: ", active, self.X_columns
+        beta, var, SSE, k, _ = qr_based_solver.solve(X[:,active],y,self.tolerance) 
+        #print "active: ", active, self.X_columns
         column_names = [ name for i,name in enumerate(self.X_columns) if active[i]  ]
         
-        if self.penaltyFn.getValue(X.shape[0],df,SSE) <= \
+        if self.penaltyFn.getValue(X.shape[0],k,SSE) <= \
                 self.penaltyFn.getValue(X.shape[0],old_summary.degrees_freedom,old_summary.SSE):
             raise StepwiseNoAction()
         modelDesc = patsy.ModelDesc(self.y_columns,column_names)
-        summary = computeSummary(beta,var,SSE,self.__SSTO,X.shape[0],df,
+        summary = computeSummary(beta,var,SSE,self.__SSTO,X.shape[0],k,
                                 column_names,modelDesc)
         
         if self.trace : 
@@ -393,10 +358,9 @@ def stepwiseInit(upperScope,
                     trace=False,
                     traceFile=stdout,
                     groupVars=False,
-                    penaltyFn=AICc()) :
-    #todo: add lower scope
-    ### The first thing that has to happen is establish the starting set of variables
-    ### this will be stored in boolean vector active
+                    penaltyFn=stepwise_penalties.AICc()) :
+    #The first set of operations sets up the lower and upper scopes and infers defaults
+    #if they are not given
     env = patsy.EvalEnvironment.capture()     
     upperScopeDesc = patsy.ModelDesc.from_formula(upperScope, env)
     startScopeDesc = None if startScope is None else ModelDesc.from_formula(startScope,env)
@@ -437,16 +401,13 @@ def stepwiseInit(upperScope,
     for feat in Xlower.design_info.column_names :
         lower_active[featMap[feat]] = True
     #next step: fit model using only the active set of features
-    print >>stderr, "about to solve"
     beta, betaSigmaSq, SSE, df, Q = qr_based_solver.solve(X[:,active],y.flatten())
-    print >>stderr, "solved"
 
     residWithMean = y - np.mean(y)
     SSTO = np.dot(residWithMean,residWithMean)
     summary = computeSummary(beta,betaSigmaSq,SSE,SSTO,X.shape[0],df,
                                 Xprime.design_info.column_names,startScope)
     
-    #print "initizlizing with: ", summary.write(stdout)
     return StepwiseFitter(LinearModelFit(summary.beta,summary),X,y,X.design_info.column_names,
                             upperScopeDesc.lhs_termlist,active,lower_active,penaltyFn,trace=trace,
                             traceFile=traceFile, groupVars=groupVars)
@@ -457,20 +418,14 @@ if __name__ == "__main__" :
     data = pandas.io.parsers.read_csv("salary2.txt")
 
     
-    fit = lm("sl ~ 1+sx+rk+yr+dg+yd+dg2",data,fitStrategy=QR)
-    est,anova = fit.summary.textPretty()
-    print est
-    print anova
-    fit.summary.write()
-#    fit = lm("sl ~ 1+sx+rk+yr+dg+yd+yd2",data,fitStrategy=Adjust)
-#
-#    #fit = lm("sl ~  dg + yd +yd2", data)
-#
-#    fit.summary.write()
-#
+    #result = fit("sl ~ 1+sx+rk+yr+dg+yd+dg2",data)
+    #est,anova = result.summary.textPretty()
+    #print est
+    #print anova
+    #fit.summary.write()
     #data = pandas.io.parsers.read_csv("salary2.txt")
-    #stepper = stepwiseInit("sl ~ sx+rk+yr+dg+yd",data,trace=True,groupVars=True)
-    #stepper.step(direction="both")
+    stepper = stepwiseInit("sl ~ sx+rk+yr+dg+yd",data,trace=True,groupVars=True)
+    stepper.step(direction="both")
     #stepper = stepwiseInit("sl ~ sx+rk+yr+dg+yd",data,startScope="sl ~ sx+rk+yr+dg+yd",
     #trace=True,groupVars=False)
     #stepper.step(direction="backward")
