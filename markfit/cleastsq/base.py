@@ -1,9 +1,15 @@
-if __name__ == "__main__" and __package__ is None:
-        __package__ = "pyleastsq.cleastsq"
+
+#to test:
+#python -m markfit.cleastsq.base
+
+#if __name__ == "__main__" and __package__ is None:
+#    #for debugging
+#    from os import sys, path
+#    #sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
+
 import numpy as np
-#from pyleastsq import householder as hh
-from ..leastsq import householder as hh
-import givens
+from ..numerics import householder as hh
+from ..numerics import givens
 import unittest 
 import scipy.linalg
 from sys import stderr, stdout
@@ -129,7 +135,6 @@ def _add_constraint_LQ(L,Q,indexMap,new_row_to_append,constraint_row_index) :
     R[:,t] = newcol
     beta,v = hh.householder(R[t,t:])
     R[t,t:] = hh.apply_householder(R[t,t:],beta,v)
-      
     Q[t,t:] = hh.apply_householder(Q[t,t:],beta,v)
     Q   = np.transpose(Q)
     L   = np.transpose(R)
@@ -250,7 +255,6 @@ class TestConstraintManipulation(unittest.TestCase) :
         newA = np.dot(L,Q)
         self.assertTrue(np.allclose(self.A,newA))
 
-
 def __is_feasible_point(A,b,C,d,w,verbose=True) :
     """
     Verify that w satisfies
@@ -293,19 +297,40 @@ def find_feasible_direction(X,y,w,Z) :
     #TODO: possitble typo in Gill book mentioned in R implementation means we have the wrong sign
     #Computes  Newton direction that can be taken either step 1 or else shortened 
     #to the neareast constraint.
-    return np.dot(Z,np.linalg.lstsq(np.dot(X,Z),np.dot(X,w) - y))
+    assert y.ndim == 1 or (y.ndim == 2 and y.shape[1] == 1)
+    y = y.reshape(y.shape[0])
+    print "let's check some dimensions: np.dot(X,Z) ", np.dot(X,Z).shape
+    print "np.dot(X,w) ", np.dot(X,w).shape
+    print "y: ", y.shape
+    print "np.dot(X,w) - y)", np.dot(X,w) - y
+    print "newX for ls: ", np.dot(X,Z)
+    print "lsqsq result: ", np.linalg.lstsq(np.dot(X,Z),np.dot(X,w) - y)
+    res,_,_,_ = np.linalg.lstsq(np.dot(X,Z),np.dot(X,w) - y)
+    
+    print "after Z it is: ", np.dot(Z,res)
+    #res /= np.linalg.norm(res)
+    print "after norm: ", res
+     
+    return res
 
 def compute_step_length(X,y,w,Z,A,b,active,p_z) :
+    """
+    take best step in direction p_z
+    If taking p_z does not break any constraints, just go with it.
+    Otherwise, take the largest distance in direction p_z such that no constraints are broken.
+    Return index of constraint chosen (possibly None), along with the step length
+    """
+    
     #TODO: can I unit test this
     #TODO: double check that 1.0 is the optimimum in this direction (chk normalization of direction)
-    length = np.norm(p_z)
+    length        = 1.0
     assert(length >= 1e-8)
-    direction = p_z / length
-    inactive = np.logical_not(active)
-    constrainable = np.logical_and(inactive, np.dot(A[inactive],direction) < 0 )
+    direction     = p_z / length
+    inactive      = np.logical_not(active)
+    constrainable = np.logical_and(inactive, np.dot(A[inactive],p_z) < 0 )
     ix = np.where(constrainable)
     if not np.any(inactive) : 
-        return length
+        return None,length,
     gammas = list((b[constrainable] - np.dot(A[constrainable],w))/ np.dot(A[constrainable], \
                         direction))
     gammaIx = np.argmin(gammas)
@@ -313,85 +338,97 @@ def compute_step_length(X,y,w,Z,A,b,active,p_z) :
         return (gammaIx,gammas[gammaIx],)
     return (None, 1.0,)
 
-def compute_lagrange_multipliers(X,y,A,b,w,verbose=True) :
+def compute_lagrange_multipliers(Ahat,g) :
     """ 
     There is a clever way to solve this using Householder computations,
     using the QT we have already computed, but for now we'll implement the brute force approach.
     """
-    g = np.dot(np.dot(X.T,X),w) - np.dot(y,w)
-    return np.linalg.lstsq(np.transpose(A.t), g)
+    #g = np.dot(np.dot(X.T,X),w) - np.dot(y,w)
+    #print "A.shape: ", A.shape, "g.shape: ", g.shape
+    result,_,_,_ = np.linalg.lstsq(Ahat, g)
+    return result
      
-def __ineq_ls(X,y,A,b,alwaysActive,verbose=True) :
+def solve_inequality_ls(X,y,A,b,alwaysActive,verbose=True) :
     """
     Minimize || Xw - y||^2 
     s.t.  Aw >= b
     and   A[alwaysActive]w = b
-    The nature of the second constraint is that equality constraints have been folded into
+    The nature of the second constraint set is that equality constraints have been folded into
     the A matrix, but the indices of those constraints must always be in the working set.
     aIx are those constraints that must always be active; these are equality constraints from the
     original problem.
     """
-    #The idea behind the implementation is to ensure the candidate solution alwasy satisfies
-    #the active constraints.  When we add a constraint it is because a step length would cause
-    #us to break the constraint... so we add the constraint and shorten the constraint accordingly.
-    #when we remove the constraint, this is true by default.  Below, we compute a solution w which
-    #obeys all constraints as a starting point.  Don't worry, we try to remove a constraint in the
+    #The idea behind the implementation is to ensure the candidate solution always satisfies
+    #the active constraints.  When we add a constraint it is because the natural step length 
+    #to the least squares problem defined by the current active set would cause
+    #us to break the constraint... so we add the constraint and shorten the step accordingly.
+    #when we remove the constraint, this is true by default.  Below, we compute a solution which
+    #obeys quality for all constraints.  Don't worry, we try to remove a constraint in the
     #first iteration of the loop.
+    #TODO: Could I come up with a feasible solution and initizlize the alg from there instead?
     i = 0
-    active  = np.ones(A.shape[0],dytype=np.bool)
-    L,Q     = LQ(A) # start with all constraints active.
-    Z       = Q[:,A.shape[0]]
-    w       = solve_equality_ls(X,y,A,b) 
-    #p_k     = find_feasible_direction(X,y,w,Z)
-    #alpha   = compute_step_length(X,y,w,Z,A,b,active,p_k) 
-    #AIS: do I want to keep sending the complete matrix Q around or shrink and grow it?
-    while True : #not has_converged(X,y,A,b,w,active,g,Z) :
-        #loop invariant:  we have already solved optimimum for the current working set. 
-        i += 1 #just for debugging
-        # the question is, is there a constraint we can remove, or should we quit
-        lambdas = compute_lagrange_multipliers(X,y,A,b,w)
-        j = np.argmin(lambdas)
-        if lambdas[j] < 0 :
-            #delete constraint j
-            pass    
-        else :
-            return w
+    active         = np.ones(A.shape[0],dtype=np.bool)
+    L, Q, indexMap = LQ(A) # start with all constraints active.
+    print "L:", L
+    print "Q:", Q
+    print "indexMap: ", indexMap
+    print "L: ", L.shape, "Q:", Q.shape, "len: ", len(indexMap), "A: ", A, A.shape
+    Z            = Q[:,:A.shape[0]]
+    w            = solve_equality_ls(X,y,A,b)
+    print "pre initial solution: ", w
+    p_k          = find_feasible_direction(X,y,w,Z)
+    #j, alpha   = compute_step_length(X,y,w,Z,A,b,active,p_k)
+    #w          += alpha * p_k
 
-        
-        p_k     = find_feasible_direction(X,y,w,Z)
-        alpha   = compute_step_length(X,y,w,Z,A,b,active,p_k)      
-        solve_equality_ls(X,y,A,b) 
-        #LI2: decide whether to continue minimizimng in the current subspace or whether
-        #to delete a constraint from the working set. I do not believe this test is necessary
-        #in our special case, because we always step as far as we can in the current subspace.
-        #if continue_minimizing :
-            #p_z = find_feasible_direction(X,y,w,Z)
-            #compiute step length
-            #if step_length_acceptable :
-            #    update_estimate
-            #    continue
-            #else :
-        #add appropriate constraint to the working set
-        #choose alpha to meet constraint
-        
-        p_k     = find_feasible_direction(X,y,w,Z)
-        alpha   = compute_step_length(X,y,w,Z,A,b,active,p_k)     
-        continue
-        #else : # delete a constraint from the working set
-        #    #choose a constraint to be deleted s
-        #    #delete s from I_k
-        #    continue
+    print "initial solution: ", w
+
+    while i < np.max(X.shape) and len(indexMap.back) : #not has_converged(X,y,A,b,w,active,g,Z) :
+        print "LOOPING! ", w
+        #loop invariant 1:  we have already solved optimimum for the current working set. 
+        #loop invariant 2:  if is no constraint to drop, then our optimization work is done
+        i += 1 #just for debugging
+        #The lagrange multipliers tell us if there is any constraint to drop
+        lambdas = compute_lagrange_multipliers(np.dot(A,Z),p_k)
+        print "returned lambdas: ", lambdas
+        j = np.argmin(lambdas)
+        if lambdas[j] >= 0 : # no constraint to drop?  All done!
+            return w
+        print "About to delete: ", j, Q.shape, L.shape
+        print "L:", L
+        print "Q:", Q
+        print "indexMap.back : ", indexMap.back
+        print "j: ", j
+        L,Q = _del_constraint_LQ(L,Q,indexMap,j)
+        p_k = find_feasible_direction(X,y,w,Z)
+        print "p_k: ", p_k
+        j, alpha   = compute_step_length(X,y,w,Z,A,b,active,p_k)      
+        print "j, alpha: ", j, alpha
+        w -= alpha * p_k
+        if j is not None :
+            #add a constraint and then continue
+            #how do I map the j to something else that gets passed?
+            L,Q = _add_constraint_LQ(L,Q,A[j],j)
+    if i >= np.max(X.shape) : 
+        assert "solve_inquality_ls failed to converge!"
     return w
 
 def solve_equality_ls(X,y,C,d) :
     #use Golub and Van Loan Chapter 12 method to solve a least squares problem which has only
     #quality constraints
+    assert C.shape[1] == X.shape[1]
+    assert d.shape[0] == C.shape[0]
+    assert X.shape[0] == y.shape[0]
+    print "solving with constrints : ", C, " = ", d
     Q,R = np.linalg.qr(C) #numpy's qr will throw an error if there is insufficient rank
     p = C.shape[1]
     assert R.shape[1] == C.shape[1]
-    w = scipy.linalg.solve_triangular(R[:p,:p,d])
+    w = scipy.linalg.solve_triangular(R[:p,:p],d)
+    if p >= X.shape[1] : return w
     X = np.dot(X,Q)
-    z = np.linalg.lstsq(X[:,p+1:], np.dot(y - X[:,:p],w))
+    
+    print "p: ", p, "X: ", X, "y: ", y, "w: ", w
+    print "let's check dimensions: ", (X[:,p:]).shape, (y - np.dot(X[:,:p],w)).shape
+    z = np.linalg.lstsq(X[:,p:], y - np.dot(X[:,:p],w))
     return np.dot(Q[:,:p],w) + np.dot(Q[:,p+1:],z)
 
 def ls(X,y,A,b,C,d,w0,verbose=True) :
@@ -403,26 +440,29 @@ def ls(X,y,A,b,C,d,w0,verbose=True) :
     w0 is a given feasible solution, which is used as a starting point.
     If A,b,C,d may be passed as None when there are no applicable constraints.
     """
+    #TODO: make w0 optional.
     assert (A is not None and b is not None) or (A is None and b is None)
     assert (C is not None and d is not None) or (C is None and d is None)
     
     #The approach we use requries  a feasible starting point, and guarantees that all
     #subsequent updates are also feasible
-    w_0 = __is_feasible_point(A,b,C,d,w0,verbose=verbose)
-    Z,_ = __LQ(A) #Z represents the null space of A
+    assert __is_feasible_point(A,b,C,d,w0,verbose=verbose)
     if A is None and C is None :
         #this is an ordinary least squares problem
         return np.linalg.lstsq(X,y)
     elif A is None :
-        #use Golub and Van Loan Chapter 12 method
-        return solve_equality_ls(X,y,C,d)     
+        #use Golub and Van Loan Chapter 12 method for equality (only) constraints
+        return solve_equality_ls(X,y,C,d)
     else :
-        aIx = np.zeros(A.shape[0],dtype==bool)
-        if B is not None :  #add equality constraints to the working set
-            aIx.append(np.ones(B.shape[0],dtype=bool))
+        aIx = np.zeros(A.shape[0],dtype=np.bool)
+        if C is not None :  #add equality constraints to the working set
+            aIx.append(np.ones(C.shape[0],dtype=np.bool))
         #with equality constraints encoded as working set, we can merge A and B matrices
-        #and pass along to a specialized routine.
-        return __ineq_ls(X,y,np.vstack((A,B)),np.vstack(b,d),w0,aIx,verbose=True)
+        #and pass along to a specialized routine. aIx is passed to indicate these certain
+        #constraints must be permanently used in the active set
+        newA = A if C is None else np.vstack((A,C,))
+        newb = b if d is None else np.vstack((b,d,))
+        return solve_inequality_ls(X,y,newA,newb,aIx,verbose=True)
 
 if __name__ == "__main__" : 
     unittest.main()
